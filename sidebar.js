@@ -7,10 +7,7 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   const { tabId, entries } = data;
   const container = document.getElementById("content");
 
-  if (tabs.length === 0 || tabs[0].id !== tabId) {
-    container.innerHTML = "<p>No data for active tab found.</p>";
-    return;
-  }
+  if (tabs.length === 0 || tabs[0].id !== tabId) return;
 
   if (type === "update") {
     container.innerHTML = ""; // Clear previous content
@@ -19,6 +16,25 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       container.innerHTML = "<p>No ECH updates found for this tab.</p>";
       return;
     }
+
+    // calculate percentage of used ECH and private DNS
+    const usedEchCount = entries.filter((entry) => entry.usedEch).length;
+    const usedPrivateDnsCount = entries.filter(
+      (entry) => entry.usedPrivateDns
+    ).length;
+    const totalCount = entries.length;
+    const echPercentage = ((usedEchCount / totalCount) * 100).toFixed(2);
+    const privateDnsPercentage = (
+      (usedPrivateDnsCount / totalCount) *
+      100
+    ).toFixed(2);
+
+    updateStats(
+      privateDnsPercentage,
+      100 - privateDnsPercentage,
+      echPercentage,
+      100 - echPercentage
+    );
 
     for (const data of entries) {
       const p = document.createElement("p");

@@ -1,10 +1,28 @@
-<body>
-  <h2>doech</h2>
-  <div id="charts">
-    <canvas id="echChart" width="200" height="200"></canvas>
-    <canvas id="dnsChart" width="200" height="200"></canvas>
-  </div>
-  <div id="content">Waiting for data...</div>
-  <button id="export">Export</button>
-  <script src="sidebar.js"></script>
-</body>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family: sans-serif;
+      }
+      canvas {
+        max-width: 300px;
+        margin: 20px auto;
+        display: block;
+      }
+    </style>
+
+    <script src="chart.js"></script>
+  </head>
+  <body>
+    <h2>doech</h2>
+    <div id="charts">
+      <canvas id="myChart"></canvas>
+    </div>
+    <div id="content">Waiting for data...</div>
+    <button id="export">Export</button>
+    <script src="sidebar.js"></script>
+    <script src="sidebar_chart.js"></script>
+  </body>
+</html>
