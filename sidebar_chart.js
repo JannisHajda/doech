@@ -83,7 +83,36 @@ const config = {
 window.addEventListener("DOMContentLoaded", () => {
   const ctx = document.getElementById("myChart");
   myChart = new Chart(ctx, config);
+
+  initDataTable([]);
 });
+
+const initDataTable = (data) => {
+  const tableElement = document.querySelector("#example");
+
+  if ($.fn.DataTable.isDataTable(tableElement)) {
+    $(tableElement).DataTable().clear().destroy();
+  }
+
+  new DataTable(tableElement, {
+    columns: [
+      { title: "Time" },
+      { title: "URL" },
+      { title: "IP" },
+      { title: "Status Code." },
+      { title: "Used ECH" },
+      { title: "Used Private DNS" },
+    ],
+    data: data,
+    autoWidth: false,
+    columnDefs: [
+      {
+        targets: 1, // URL column
+        width: "10%",
+      },
+    ],
+  });
+};
 
 window.addEventListener("resize", () => {
   if (myChart) {

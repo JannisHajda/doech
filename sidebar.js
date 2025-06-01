@@ -5,19 +5,14 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   const type = message.type.replace("doech", "").toLowerCase();
   const { data } = message;
   const { tabId, entries } = data;
-  const container = document.getElementById("content");
 
   if (tabs.length === 0 || tabs[0].id !== tabId) return;
 
   if (type === "update") {
-    container.innerHTML = ""; // Clear previous content
+    initDataTable([]);
 
-    if (entries.length === 0) {
-      container.innerHTML = "<p>No ECH updates found for this tab.</p>";
-      return;
-    }
+    if (entries.length === 0) return;
 
-    // calculate percentage of used ECH and private DNS
     const usedEchCount = entries.filter((entry) => entry.usedEch).length;
     const usedPrivateDnsCount = entries.filter(
       (entry) => entry.usedPrivateDns
@@ -36,30 +31,31 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       100 - echPercentage
     );
 
-    for (const data of entries) {
-      const p = document.createElement("p");
-      p.className = "ech-update";
-      p.innerHTML = `
-            <strong>Time:</strong> ${new Date(
-              data.timeStamp
-            ).toLocaleTimeString()}<br>
-            <strong>URL:</strong> ${data.url}<br>
-            <strong>IP:</strong> ${data.ip}<br>
-            <strong>Status Code:</strong> ${data.statusCode}<br>
-            <strong>Used ECH:</strong> ${data.usedEch ? "Yes" : "No"}<br>
-            <strong>Used Private DNS:</strong> ${
-              data.usedPrivateDns ? "Yes" : "No"
-            }<br>
-        `;
-      container.appendChild(p);
-    }
+    let data = [];
+    entries.forEach((entry) => {
+      data.push([
+        new Date(entry.timeStamp).toLocaleString(),
+        entry.url,
+        entry.ip,
+        entry.statusCode,
+        entry.usedEch,
+        entry.usedPrivateDns,
+      ]);
+    });
+
+    initDataTable(data);
   }
 });
 
-document.addEventListener("DOMContentLoaded", () => {
-  const exportButton = document.getElementById("export");
+document.addEventListener("DOMContentLoaded", async () => {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
 
-  exportButton.addEventListener("click", async () => {
-    alert("Export functionality is not implemented yet.");
-  });
+  if (tab) {
+    browser.runtime.sendMessage({
+      type: "doechRequestUpdate",
+      data: {
+        tabId: tab.id,
+      },
+    });
+  }
 });

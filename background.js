@@ -14,6 +14,8 @@ browser.webRequest.onHeadersReceived.addListener(
 
     const { usedEch, usedPrivateDns } = securityInfo;
 
+    if (usedEch === undefined || usedPrivateDns === undefined) return;
+
     const data = {
       tabId,
       timeStamp,
@@ -59,4 +61,24 @@ browser.tabs.onActivated.addListener((activeInfo) => {
       entries,
     },
   });
+});
+
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message.type.startsWith("doech")) return;
+
+  const type = message.type.replace("doech", "").toLowerCase();
+  const { data } = message;
+
+  if (type === "requestupdate") {
+    const { tabId } = data;
+    const entries = tabData[tabId] || [];
+
+    browser.runtime.sendMessage({
+      type: "doechUpdate",
+      data: {
+        tabId,
+        entries,
+      },
+    });
+  }
 });
