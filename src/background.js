@@ -2,8 +2,16 @@ const tabData = {};
 
 browser.webRequest.onHeadersReceived.addListener(
   async (details) => {
-    const { requestId, tabId, url, timeStamp, ip, statusCode, fromCache } =
-      details;
+    const {
+      requestId,
+      tabId,
+      url,
+      timeStamp,
+      ip,
+      statusCode,
+      fromCache,
+      type,
+    } = details;
 
     if (fromCache) return;
 
@@ -16,6 +24,8 @@ browser.webRequest.onHeadersReceived.addListener(
 
     if (usedEch === undefined || usedPrivateDns === undefined) return;
 
+    if (!tabData[tabId]) tabData[tabId] = [];
+
     const data = {
       tabId,
       timeStamp,
@@ -26,9 +36,9 @@ browser.webRequest.onHeadersReceived.addListener(
       usedPrivateDns,
     };
 
-    if (!tabData[tabId]) tabData[tabId] = [];
-
-    tabData[tabId].push(data);
+    // group by main frame and subsequent requests
+    if (type == "main_frame") tabData[tabId].push([data]);
+    else tabData[tabId][tabData[tabId].length - 1].push(data);
 
     browser.runtime.sendMessage({
       type: "doechUpdate",

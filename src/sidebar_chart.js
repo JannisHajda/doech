@@ -4,11 +4,12 @@ const data = {
   labels: ["Secure DNS", "Unsecure DNS", "ECH Enabled", "ECH Disabled"],
   datasets: [
     {
-      backgroundColor: ["#AAA", "#777"],
+      backgroundColor: ["#dab2ff", "#3c0366"],
+
       data: [21, 79],
     },
     {
-      backgroundColor: ["hsl(0, 100%, 60%)", "hsl(0, 100%, 35%)"],
+      backgroundColor: ["#ffa1ad", "#8b0836"],
       data: [33, 67],
     },
   ],
@@ -34,6 +35,7 @@ const config = {
     maintainAspectRatio: false,
     plugins: {
       legend: {
+        position: "bottom",
         labels: {
           generateLabels: function (chart) {
             const original =
@@ -83,36 +85,7 @@ const config = {
 window.addEventListener("DOMContentLoaded", () => {
   const ctx = document.getElementById("myChart");
   myChart = new Chart(ctx, config);
-
-  initDataTable([]);
 });
-
-const initDataTable = (data) => {
-  const tableElement = document.querySelector("#example");
-
-  if ($.fn.DataTable.isDataTable(tableElement)) {
-    $(tableElement).DataTable().clear().destroy();
-  }
-
-  new DataTable(tableElement, {
-    columns: [
-      { title: "Time" },
-      { title: "URL" },
-      { title: "IP" },
-      { title: "Status Code." },
-      { title: "Used ECH" },
-      { title: "Used Private DNS" },
-    ],
-    data: data,
-    autoWidth: false,
-    columnDefs: [
-      {
-        targets: 1, // URL column
-        width: "10%",
-      },
-    ],
-  });
-};
 
 window.addEventListener("resize", () => {
   if (myChart) {

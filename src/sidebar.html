@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="chart.js"></script>
+    <script src="jquery-3.7.1.js"></script>
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles/sidebar_output.css" />
+  </head>
+
+  <body>
+    <div class="bg-slate-800 h-screen">
+      <header
+        id="mainHeader"
+        class="h-16 bg-slate-700 text-slate-100 flex items-center p-5 border-b-2 border-slate-600"
+      >
+        <h2 class="logo text-xl grow">doech</h2>
+        <p>
+          <span class="material-icons"> save </span>
+        </p>
+      </header>
+
+      <header
+        class="h-16 bg-slate-700 hidden text-slate-100 flex items-center p-5 border-b-2 border-slate-600"
+        id="detailsHeader"
+      >
+        <div class="grow flex items-center" id="closeDetails">
+          <span class="material-icons ml-2">arrow_back_ios</span>
+          <h2 class="text-xl">Details</h2>
+          <span>(https://amazon.de)</span>
+        </div>
+      </header>
+
+      <main
+        class="max-w-2xl flex items-center flex-col relative mx-auto mt-5 px-5"
+      >
+        <div class="flex flex-col w-full">
+          <h2 class="text-slate-300 text-2xl mb-2">Summary</h2>
+          <div>
+            <span class="text-slate-300">URL:</span>
+            <span class="text-slate-400">https://www.amazon.de</span>
+          </div>
+          <div>
+            <span class="text-slate-300">Request-Time:</span>
+            <span class="text-slate-400">2023-10-01 12:00:00</span>
+          </div>
+          <div>
+            <span class="text-slate-300">Loaded using DoH?</span>
+            <span class="text-slate-400">Yes</span>
+          </div>
+          <div>
+            <span class="text-slate-300">Loaded using ECH?</span>
+            <span class="text-slate-400">Yes</span>
+          </div>
+          <div>
+            <span class="text-slate-300">Cached?</span>
+            <span class="text-slate-400">No</span>
+          </div>
+
+          <hr class="my-5 border-slate-600" />
+          <h2 class="text-slate-300 text-2xl mb-5">Additional Requests</h2>
+        </div>
+
+        <div id="charts" class="">
+          <canvas id="myChart"></canvas>
+        </div>
+
+        <div class="overflow-scrol w-full max-h-32 mt-10">
+          <div
+            class="card h-16 w-full bg-slate-600 flex items-center p-2 rounded-md mb-5"
+          >
+            <div
+              class="rounded-lg h-12 w-12 bg-slate-300 flex items-center justify-center flex-shrink-0"
+            >
+              <span>200</span>
+            </div>
+            <div class="url ml-2 flex-grow overflow-hidden">
+              <p
+                class="text-ellipsis overflow-hidden whitespace-nowrap w-full text-white"
+                title="https://amazon.com/asdkfjaksdjf/sadfjksjd/asdkfjksadjfk"
+              >
+                https://amazon.com/asdkfjaksdjf/sadfjksjd/asdkfjksadjfk
+              </p>
+            </div>
+            <div class="stats flex items-center ml-2 flex-shrink-0 text-white">
+              <span class="material-icons" title="DoH Usage">
+                check_circle
+              </span>
+              <span class="material-icons" title="ECH Usage">
+                check_circle
+              </span>
+              <span class="material-icons" title="Cached"> error </span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <table id="example" class="display" width="100%"></table>
+    <script src="sidebar.js"></script>
+    <script src="sidebar_chart.js"></script>
+  </body>
+</html>
