@@ -1,7 +1,15 @@
 const tabData = {};
 
-const handleHeadersReceived = async (tabId, details) => {
-  const { requestId, url, timeStamp, ip, statusCode, fromCache, type } =
+const requests = [];
+
+browser.webRequest.onHeadersReceived.addListener(
+  (details) => receivedRequest(details),
+  { urls: ["<all_urls>"] },
+  ["blocking"]
+);
+
+const receivedRequest = async (details) => {
+  const { tabId, requestId, url, timeStamp, ip, statusCode, fromCache, type } =
     details;
 
   const securityInfo = await browser.webRequest.getSecurityInfo(requestId, {});
@@ -9,8 +17,6 @@ const handleHeadersReceived = async (tabId, details) => {
   const { usedEch, usedPrivateDns } = securityInfo;
 
   if (usedEch === undefined || usedPrivateDns === undefined) return;
-
-  if (!tabData[tabId]) tabData[tabId] = [];
 
   const data = {
     tabId,
@@ -25,78 +31,36 @@ const handleHeadersReceived = async (tabId, details) => {
     fromCache,
   };
 
-  // group by main frame and subsequent requests
-  if (type == "main_frame") tabData[tabId].push([data]);
-  else tabData[tabId][tabData[tabId].length - 1].push(data);
-
-  browser.runtime.sendMessage({
-    type: "doechUpdate",
-    data,
-  });
-};
-
-browser.tabs.onRemoved.addListener((tabId) => {
-  if (tabData[tabId]) delete tabData[tabId];
-});
-
-browser.tabs.onActivated.addListener((activeInfo) => {
-  const { tabId } = activeInfo;
-  if (!tabData[tabId]) tabData[tabId] = [];
-
-  const entries = tabData[tabId];
-
-  browser.runtime.sendMessage({
-    type: "doechTabActivated",
-    data: {
-      tabId,
-      entries,
-    },
-  });
-});
-
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!message.type.startsWith("doech")) return;
-
-  const type = message.type.replace("doech", "").toLowerCase();
-  const { data } = message;
-
-  if (type === "requestupdate") {
-    const { tabId } = data;
-    const entries = tabData[tabId] || [];
+  if (type == "main_frame") {
+    data.subsequentRequests = [];
+    requests.push(data);
 
     browser.runtime.sendMessage({
-      type: "doechUpdate",
-      data: {
-        tabId,
-        entries,
-      },
+      type: "doech-mainFrame",
+      data,
     });
-  }
-});
-
-const headersListener = {};
-
-function createHeadersListener(tabId) {
-  return function (details) {
-    return handleHeadersReceived(tabId, details);
-  };
-}
-
-browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading") {
-    if (headersListener[tabId]) {
-      browser.webRequest.onHeadersReceived.removeListener(
-        headersListener[tabId]
-      );
-      delete headersListener[tabId];
-    }
-
-    const listener = createHeadersListener(tabId);
-    browser.webRequest.onHeadersReceived.addListener(
-      listener,
-      { urls: ["<all_urls>"] },
-      ["blocking"]
+  } else {
+    // find the main frame request
+    const mainFrameRequest = requests.findLast(
+      (req) => req.tabId === tabId && req.type === "main_frame"
     );
-    headersListener[tabId] = listener;
+
+    // ignore subsequent requests if the main frame is not present
+    if (tabId === -1 || !mainFrameRequest) return;
+
+    // add the subsequent request to the main frame request
+    // mainFrameRequest.subsequentRequests.push(data);
+
+    // TODO: send update
   }
+};
+
+browser.runtime.onMessage.addListener(async (message, sender) => {
+  if (!message.type.startsWith("doech-")) return;
+
+  let messageType = message.type.replace("doech-", "");
+
+  if (messageType === "init") return { data: requests };
+
+  if (messageType === "export") return { data: requests };
 });

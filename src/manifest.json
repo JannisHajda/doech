@@ -12,7 +12,8 @@
     "webNavigation",
     "webRequest",
     "webRequestBlocking",
-    "<all_urls>"
+    "<all_urls>",
+    "downloads"
   ],
   "host_permissions": ["<all_urls>"],
   "sidebar_action": {

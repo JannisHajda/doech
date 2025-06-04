@@ -1,151 +1,84 @@
-let latestMainFrameRequestId = null;
+let totalMainFrames = 0;
+let usedPrivateDns = 0;
+let usedEch = 0;
 
-let mainFrameCount = 0;
-let mainFrameEchCount = 0;
-let mainFramePrivateDnsCount = 0;
+const addMainFrame = (data) => {
+  if (!$("#noData").hasClass("hidden")) {
+    $("#noData").addClass("hidden");
+    $("#mainFrames").removeClass("hidden");
+  }
 
-$(() => {
-  $(".card").on("click", () => {
-    showDetails();
-  });
+  totalMainFrames++;
+  if (data.usedEch) usedEch++;
+  if (data.usedPrivateDns) usedPrivateDns++;
 
-  $("#closeDetails").on("click", () => {
-    closeDetails();
-  });
-});
+  updateMainFramesChart(totalMainFrames, usedEch, usedPrivateDns);
 
-const showDetails = () => {
-  $("#mainHeader").hide();
-  $("#detailsHeader").show();
-  detailsEnabled = true;
-};
-
-const closeDetails = () => {
-  $("#mainHeader").show();
-  $("#detailsHeader").hide();
-  detailsEnabled = false;
-};
-
-const updateChart = () => {
-  const echPercentage =
-    mainFrameCount === 0
-      ? 0
-      : ((mainFrameEchCount / mainFrameCount) * 100).toFixed(2);
-  const privateDnsPercentage =
-    mainFrameCount === 0
-      ? 0
-      : ((mainFramePrivateDnsCount / mainFrameCount) * 100).toFixed(2);
-  updateStats(
-    privateDnsPercentage,
-    100 - privateDnsPercentage,
-    echPercentage,
-    100 - echPercentage
-  );
-};
-
-browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
-  if (!message.type.startsWith("doech")) return;
-
-  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-  const type = message.type.replace("doech", "").toLowerCase();
-  const { data } = message;
-  const { tabId } = data;
-
-  if (tabs.length === 0 || tabs[0].id !== tabId) return;
-
-  if (type === "update") {
-    if (message.data.type === "main_frame") {
-      latestMainFrameRequestId = message.data.requestId;
-      mainFrameCount++;
-      if (message.data.usedEch) mainFrameEchCount++;
-      if (message.data.usedPrivateDns) mainFramePrivateDnsCount++;
-      updateChart();
-
-      console.log("Main frame request received: ", latestMainFrameRequestId);
-
-      // add a div for the main frame
-      $("#mainFrames").append(
-        `<div class="card h-16 w-full bg-slate-600 flex items-center p-2 rounded-md mb-5" id="mainFrame-${
-          message.data.requestId
-        }">
+  $("#mainFrames").prepend(
+    `<div class="card h-16 w-full bg-slate-600 flex items-center p-2 rounded-md mb-5" id="mainFrame-${
+      data.requestId
+    }">
             <div
               class="rounded-lg h-12 w-12 bg-slate-300 flex items-center justify-center flex-shrink-0"
             >
-              <span>${message.data.statusCode}</span>
+              <span>${data.statusCode}</span>
             </div>
             <div class="url ml-2 flex-grow overflow-hidden">
               <p
                 class="text-ellipsis overflow-hidden whitespace-nowrap w-full text-white"
-                title="${message.data.url}"
+                title="${data.url}"
               >
-              ${message.data.url}
+              ${data.url}
               </p>
             </div>
             <div class="stats flex items-center ml-2 flex-shrink-0 text-white">
-              <span class="material-icons" title="DoH Usage">
-                ${message.data.usedPrivateDns ? "check_circle" : "error"}
+              <span class="material-icons mr-1" title="DoH Usage">
+                ${data.usedPrivateDns ? "check_circle" : "error"}
               </span>
               <span class="material-icons" title="ECH Usage">
-${message.data.usedEch ? "check_circle" : "error"}
+                ${data.usedEch ? "check_circle" : "error"}
               </span>
-              <span class="material-icons" title="Cached"> ${
-                message.data.cached ? "check_circle" : "error"
-              } </span>
             </div>`
-      );
-    } else
-      console.log(
-        "Subsequent request received! Latest main frame ID: ",
-        latestMainFrameRequestId
-      );
+  );
+};
 
-    //// entries is 2d array -> first element is main frame (first item in each sub-array)
-    //// subsequent requests are in the same sub-array
-    //// print the main frame and below it (ul) subsequent requests
+browser.runtime.onMessage.addListener(async (message) => {
+  if (!message.type.startsWith("doech-")) return;
 
-    //const usedEchCount = entries.filter((entry) => entry.usedEch).length;
-    //const usedPrivateDnsCount = entries.filter(
-    //  (entry) => entry.usedPrivateDns
-    //).length;
-    //const totalCount = entries.length;
-    //const echPercentage = ((usedEchCount / totalCount) * 100).toFixed(2);
-    //const privateDnsPercentage = (
-    //  (usedPrivateDnsCount / totalCount) *
-    //  100
-    //).toFixed(2);
+  let messageType = message.type.replace("doech-", "");
 
-    //updateStats(
-    //  privateDnsPercentage,
-    //  100 - privateDnsPercentage,
-    //  echPercentage,
-    //  100 - echPercentage
-    //);
+  const data = message.data;
 
-    //let data = [];
-    //entries.forEach((entry) => {
-    //  data.push([
-    //    new Date(entry.timeStamp).toLocaleString(),
-    //    entry.url,
-    //    entry.ip,
-    //    entry.statusCode,
-    //    entry.usedEch,
-    //    entry.usedPrivateDns,
-    //  ]);
-    //});
-
-    // initDataTable(data);
-  }
+  if (messageType === "mainFrame") addMainFrame(data);
 });
 
-document.addEventListener("DOMContentLoaded", async () => {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+const exportData = async () => {
+  const res = await browser.runtime.sendMessage({ type: "doech-export" });
 
-  if (tab) {
-    browser.runtime.sendMessage({
-      type: "doechRequestUpdate",
-      data: {
-        tabId: tab.id,
-      },
-    });
-  }
+  const exportedData = res.data.map((req) => ({
+    ...req,
+    timeStamp: new Date(req.timeStamp).toISOString(),
+  }));
+
+  const blob = new Blob([JSON.stringify(exportedData, null, 2)], {
+    type: "application/json",
+  });
+
+  const url = URL.createObjectURL(blob);
+
+  browser.downloads.download({
+    url,
+    filename: "doech_data.json",
+    saveAs: true,
+  });
+};
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const res = await browser.runtime.sendMessage({
+    type: "doech-init",
+  });
+
+  for (const data of res.data) addMainFrame(data);
+
+  $("#export").on("click", () => exportData());
 });
