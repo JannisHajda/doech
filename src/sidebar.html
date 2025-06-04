@@ -69,34 +69,10 @@
           <canvas id="myChart"></canvas>
         </div>
 
-        <div class="overflow-scrol w-full max-h-32 mt-10">
-          <div
-            class="card h-16 w-full bg-slate-600 flex items-center p-2 rounded-md mb-5"
-          >
-            <div
-              class="rounded-lg h-12 w-12 bg-slate-300 flex items-center justify-center flex-shrink-0"
-            >
-              <span>200</span>
-            </div>
-            <div class="url ml-2 flex-grow overflow-hidden">
-              <p
-                class="text-ellipsis overflow-hidden whitespace-nowrap w-full text-white"
-                title="https://amazon.com/asdkfjaksdjf/sadfjksjd/asdkfjksadjfk"
-              >
-                https://amazon.com/asdkfjaksdjf/sadfjksjd/asdkfjksadjfk
-              </p>
-            </div>
-            <div class="stats flex items-center ml-2 flex-shrink-0 text-white">
-              <span class="material-icons" title="DoH Usage">
-                check_circle
-              </span>
-              <span class="material-icons" title="ECH Usage">
-                check_circle
-              </span>
-              <span class="material-icons" title="Cached"> error </span>
-            </div>
-          </div>
-        </div>
+        <div
+          class="overflow-y-scroll w-full max-h-32 mt-10"
+          id="mainFrames"
+        ></div>
       </main>
     </div>
     <table id="example" class="display" width="100%"></table>

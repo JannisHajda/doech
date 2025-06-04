@@ -1,4 +1,4 @@
-let detailsEnabled = false;
+let latestMainFrameRequestId = null;
 
 $(() => {
   $(".card").on("click", () => {
@@ -25,56 +25,87 @@ const closeDetails = () => {
 browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (!message.type.startsWith("doech")) return;
 
-  console.log(
-    "Received message:",
-    message,
-    " details enabled:",
-    detailsEnabled
-  );
-
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
   const type = message.type.replace("doech", "").toLowerCase();
   const { data } = message;
-  const { tabId, entries } = data;
+  const { tabId } = data;
 
   if (tabs.length === 0 || tabs[0].id !== tabId) return;
 
   if (type === "update") {
-    if (entries.length === 0) return;
+    if (message.data.type === "main_frame") {
+      latestMainFrameRequestId = message.data.requestId;
+      console.log("Main frame request received: ", latestMainFrameRequestId);
 
-    // entries is 2d array -> first element is main frame (first item in each sub-array)
-    // subsequent requests are in the same sub-array
-    // print the main frame and below it (ul) subsequent requests
+      // add a div for the main frame
+      $("#mainFrames").append(
+        `<div class="card h-16 w-full bg-slate-600 flex items-center p-2 rounded-md mb-5" id="mainFrame-${
+          message.data.requestId
+        }">
+            <div
+              class="rounded-lg h-12 w-12 bg-slate-300 flex items-center justify-center flex-shrink-0"
+            >
+              <span>${message.data.statusCode}</span>
+            </div>
+            <div class="url ml-2 flex-grow overflow-hidden">
+              <p
+                class="text-ellipsis overflow-hidden whitespace-nowrap w-full text-white"
+                title="${message.data.url}"
+              >
+              ${message.data.url}
+              </p>
+            </div>
+            <div class="stats flex items-center ml-2 flex-shrink-0 text-white">
+              <span class="material-icons" title="DoH Usage">
+                ${message.data.usedPrivateDns ? "check_circle" : "error"}
+              </span>
+              <span class="material-icons" title="ECH Usage">
+${message.data.usedEch ? "check_circle" : "error"}
+              </span>
+              <span class="material-icons" title="Cached"> ${
+                message.data.cached ? "check_circle" : "error"
+              } </span>
+            </div>`
+      );
+    } else
+      console.log(
+        "Subsequent request received! Latest main frame ID: ",
+        latestMainFrameRequestId
+      );
 
-    const usedEchCount = entries.filter((entry) => entry.usedEch).length;
-    const usedPrivateDnsCount = entries.filter(
-      (entry) => entry.usedPrivateDns
-    ).length;
-    const totalCount = entries.length;
-    const echPercentage = ((usedEchCount / totalCount) * 100).toFixed(2);
-    const privateDnsPercentage = (
-      (usedPrivateDnsCount / totalCount) *
-      100
-    ).toFixed(2);
+    //// entries is 2d array -> first element is main frame (first item in each sub-array)
+    //// subsequent requests are in the same sub-array
+    //// print the main frame and below it (ul) subsequent requests
 
-    updateStats(
-      privateDnsPercentage,
-      100 - privateDnsPercentage,
-      echPercentage,
-      100 - echPercentage
-    );
+    //const usedEchCount = entries.filter((entry) => entry.usedEch).length;
+    //const usedPrivateDnsCount = entries.filter(
+    //  (entry) => entry.usedPrivateDns
+    //).length;
+    //const totalCount = entries.length;
+    //const echPercentage = ((usedEchCount / totalCount) * 100).toFixed(2);
+    //const privateDnsPercentage = (
+    //  (usedPrivateDnsCount / totalCount) *
+    //  100
+    //).toFixed(2);
 
-    let data = [];
-    entries.forEach((entry) => {
-      data.push([
-        new Date(entry.timeStamp).toLocaleString(),
-        entry.url,
-        entry.ip,
-        entry.statusCode,
-        entry.usedEch,
-        entry.usedPrivateDns,
-      ]);
-    });
+    //updateStats(
+    //  privateDnsPercentage,
+    //  100 - privateDnsPercentage,
+    //  echPercentage,
+    //  100 - echPercentage
+    //);
+
+    //let data = [];
+    //entries.forEach((entry) => {
+    //  data.push([
+    //    new Date(entry.timeStamp).toLocaleString(),
+    //    entry.url,
+    //    entry.ip,
+    //    entry.statusCode,
+    //    entry.usedEch,
+    //    entry.usedPrivateDns,
+    //  ]);
+    //});
 
     // initDataTable(data);
   }
