@@ -60,6 +60,11 @@ const exportData = async () => {
     timeStamp: new Date(req.timeStamp).toISOString(),
   }));
 
+  if (exportedData.length === 0) {
+    alert("No data to export.");
+    return;
+  }
+
   const blob = new Blob([JSON.stringify(exportedData, null, 2)], {
     type: "application/json",
   });
