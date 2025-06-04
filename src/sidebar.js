@@ -1,5 +1,9 @@
 let latestMainFrameRequestId = null;
 
+let mainFrameCount = 0;
+let mainFrameEchCount = 0;
+let mainFramePrivateDnsCount = 0;
+
 $(() => {
   $(".card").on("click", () => {
     showDetails();
@@ -22,6 +26,23 @@ const closeDetails = () => {
   detailsEnabled = false;
 };
 
+const updateChart = () => {
+  const echPercentage =
+    mainFrameCount === 0
+      ? 0
+      : ((mainFrameEchCount / mainFrameCount) * 100).toFixed(2);
+  const privateDnsPercentage =
+    mainFrameCount === 0
+      ? 0
+      : ((mainFramePrivateDnsCount / mainFrameCount) * 100).toFixed(2);
+  updateStats(
+    privateDnsPercentage,
+    100 - privateDnsPercentage,
+    echPercentage,
+    100 - echPercentage
+  );
+};
+
 browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (!message.type.startsWith("doech")) return;
 
@@ -35,6 +56,11 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (type === "update") {
     if (message.data.type === "main_frame") {
       latestMainFrameRequestId = message.data.requestId;
+      mainFrameCount++;
+      if (message.data.usedEch) mainFrameEchCount++;
+      if (message.data.usedPrivateDns) mainFramePrivateDnsCount++;
+      updateChart();
+
       console.log("Main frame request received: ", latestMainFrameRequestId);
 
       // add a div for the main frame
