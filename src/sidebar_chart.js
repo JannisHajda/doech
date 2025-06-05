@@ -1,23 +1,31 @@
-let mainFramesChart;
+let chart;
 
-const data = {
-  labels: ["Secure DNS", "Unsecure DNS", "ECH Enabled", "ECH Disabled"],
+const chartLabels = [
+  "Secure DNS",
+  "Unsecure DNS",
+  "ECH Enabled",
+  "ECH Disabled",
+];
+
+const chartData = {
+  labels: chartLabels,
   datasets: [
     {
+      label: "DNS",
       backgroundColor: ["#dab2ff", "#3c0366"],
-
       data: [0, 100],
     },
     {
+      label: "ECH",
       backgroundColor: ["#ffa1ad", "#8b0836"],
       data: [0, 100],
     },
   ],
 };
 
-const config = {
+const chartConfig = {
   type: "pie",
-  data: data,
+  data: chartData,
   options: {
     responsive: true,
     maintainAspectRatio: false,
@@ -25,45 +33,40 @@ const config = {
       legend: {
         position: "bottom",
         labels: {
-          generateLabels: (chart) => {
-            const original =
+          generateLabels(chart) {
+            const originalGenerate =
               Chart.overrides.pie.plugins.legend.labels.generateLabels;
-            const labelsOriginal = original.call(this, chart);
+            const labels = originalGenerate.call(this, chart);
 
-            let datasetColors = chart.data.datasets.map(
-              (e) => e.backgroundColor
+            const flatColors = chart.data.datasets.flatMap(
+              (ds) => ds.backgroundColor
             );
 
-            datasetColors = datasetColors.flat();
-
-            labelsOriginal.forEach((label) => {
+            labels.forEach((label) => {
               label.datasetIndex = Math.floor(label.index / 2);
               label.hidden = !chart.isDatasetVisible(label.datasetIndex);
-              label.fillStyle = datasetColors[label.index];
+              label.fillStyle = flatColors[label.index];
             });
 
-            return labelsOriginal;
+            return labels;
           },
         },
-        onClick: (e, legendItem, legend) => {
-          const ci = legend.chart;
+        onClick(e, legendItem, legend) {
+          const chart = legend.chart;
           const datasetIndex = legendItem.datasetIndex;
-          const meta = ci.getDatasetMeta(datasetIndex);
+          const meta = chart.getDatasetMeta(datasetIndex);
 
-          meta.hidden = ci.isDatasetVisible(datasetIndex);
-          ci.update();
+          meta.hidden = chart.isDatasetVisible(datasetIndex);
+          chart.update();
         },
       },
       tooltip: {
         callbacks: {
-          title: (context) => {
+          title(context) {
             const labelIndex =
               context[0].datasetIndex * 2 + context[0].dataIndex;
-            return (
-              context[0].chart.data.labels[labelIndex] +
-              ": " +
-              context[0].formattedValue
-            );
+            const label = context[0].chart.data.labels[labelIndex];
+            return `${label}: ${context[0].formattedValue}`;
           },
         },
       },
@@ -71,31 +74,28 @@ const config = {
   },
 };
 
-const updateMainFramesChart = (total = 0, usedEch, usedPrivateDns) => {
-  if (!mainFramesChart) return;
+const setChartData = (total = 100, usedEch = 0, usedPrivateDns = 0) => {
+  if (!chart) return;
 
-  const usedEchPercentage = Math.round((usedEch / total) * 100);
+  const toPercent = (value) => Math.round((value / total) * 100);
 
-  const usedPrivateDnsPercentage = Math.round((usedPrivateDns / total) * 100);
+  chart.data.datasets[0].data = [
+    toPercent(usedPrivateDns),
+    100 - toPercent(usedPrivateDns),
+  ];
 
-  if (mainFramesChart.data.datasets.length >= 2) {
-    mainFramesChart.data.datasets[0].data = [
-      usedPrivateDnsPercentage,
-      100 - usedPrivateDnsPercentage,
-    ];
-    mainFramesChart.data.datasets[1].data = [
-      usedEchPercentage,
-      100 - usedEchPercentage,
-    ];
-    mainFramesChart.update();
-  }
+  chart.data.datasets[1].data = [toPercent(usedEch), 100 - toPercent(usedEch)];
+
+  chart.update();
 };
 
 window.addEventListener("DOMContentLoaded", () => {
-  const ctx = document.getElementById("mainFramesChart");
-  mainFramesChart = new Chart(ctx, config);
+  const ctx = document.getElementById("chart");
+  if (ctx) {
+    chart = new Chart(ctx, chartConfig);
+  }
 });
 
 window.addEventListener("resize", () => {
-  if (mainFramesChart) mainFramesChart.resize();
+  chart?.resize();
 });

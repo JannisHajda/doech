@@ -1,5 +1,3 @@
-const tabData = {};
-
 const requests = [];
 
 browser.webRequest.onHeadersReceived.addListener(
@@ -31,27 +29,19 @@ const receivedRequest = async (details) => {
     fromCache,
   };
 
-  if (type == "main_frame") {
-    data.subsequentRequests = [];
-    requests.push(data);
+  type == "main_frame"
+    ? (data.type = "primaryRequest")
+    : (data.type = "subRequest");
 
-    browser.runtime.sendMessage({
-      type: "doech-mainFrame",
+  requests.push(data);
+
+  try {
+    await browser.runtime.sendMessage({
+      type: "doech-update",
       data,
     });
-  } else {
-    // find the main frame request
-    const mainFrameRequest = requests.findLast(
-      (req) => req.tabId === tabId && req.type === "main_frame"
-    );
-
-    // ignore subsequent requests if the main frame is not present
-    if (tabId === -1 || !mainFrameRequest) return;
-
-    // add the subsequent request to the main frame request
-    // mainFrameRequest.subsequentRequests.push(data);
-
-    // TODO: send update
+  } catch (e) {
+    // sidebar is not opened, ignore the error
   }
 };
 
@@ -61,6 +51,4 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   let messageType = message.type.replace("doech-", "");
 
   if (messageType === "init") return { data: requests };
-
-  if (messageType === "export") return { data: requests };
 });
