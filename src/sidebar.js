@@ -104,6 +104,8 @@ browser.runtime.onMessage.addListener(async (message) => {
 });
 
 const exportData = async () => {
+  let requests = [...primaryRequests, ...subRequests];
+
   const exportedData = requests.map((req) => ({
     ...req,
     timeStamp: new Date(req.timeStamp).toISOString(),
@@ -164,5 +166,24 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     updateChart();
     updateNoRequestsMessage();
+  });
+
+  $("#reset").on("click", () => {
+    primaryRequests = [];
+    subRequests = [];
+    primaryRequestCount = 0;
+    primaryRequestCountEch = 0;
+    primaryRequestCountPrivateDns = 0;
+    subRequestCount = 0;
+    subRequestCountEch = 0;
+    subRequestCountPrivateDns = 0;
+
+    $("#requests").empty();
+    updateChart();
+    updateNoRequestsMessage();
+
+    browser.runtime.sendMessage({
+      type: "doech-reset",
+    });
   });
 });

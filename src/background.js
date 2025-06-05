@@ -1,4 +1,4 @@
-const requests = [];
+let requests = [];
 
 browser.webRequest.onHeadersReceived.addListener(
   (details) => receivedRequest(details),
@@ -51,4 +51,8 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   let messageType = message.type.replace("doech-", "");
 
   if (messageType === "init") return { data: requests };
+  if (messageType === "reset") {
+    requests = [];
+    return { success: true };
+  }
 });
