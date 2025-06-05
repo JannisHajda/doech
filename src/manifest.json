@@ -8,8 +8,6 @@
     "persistent": false
   },
   "permissions": [
-    "tabs",
-    "webNavigation",
     "webRequest",
     "webRequestBlocking",
     "<all_urls>",
