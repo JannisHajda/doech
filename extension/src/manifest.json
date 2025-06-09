@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "doech",
+  "version": "1.0",
+  "description": "Visualize DoH and ECH usage!",
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "<all_urls>",
+    "downloads"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "sidebar_action": {
+    "default_title": "doech",
+    "default_panel": "sidebar.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"]
+    }
+  ]
+}
