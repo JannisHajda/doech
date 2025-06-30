@@ -26,6 +26,7 @@ CLICKHOUSE_PASSWORD = "default"
 GECKO_DRIVER_PATH = "/path/to/geckodriver"
 EXTENSION_PATH = "/path/to/doech/extension"
 DOMAIN_LIST = "/path/to/domain_list.csv"
+TOP_N_DOMAINS = 1000  # Number of domains to process
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
 CLICKHOUSE_BATCH_SIZE = 100
@@ -228,9 +229,11 @@ if __name__ == "__main__":
     print(f"Starting run with UUID: {RUN_UUID}")
 
     with open(DOMAIN_LIST, "r") as f:
-        reader = csv.reader(f)
-        next(reader)  # skip header row: "domain"
+        reader = csv.reader(f, delimiter=',')
         domains = [row[0] for row in reader if row]
+
+        if TOP_N_DOMAINS > 0:
+            domains = domains[:TOP_N_DOMAINS]
 
     client = init_clickhouse()
     buffer = []
