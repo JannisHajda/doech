@@ -65,7 +65,7 @@ def insert_batch(client, batch):
             entry.get("end")
         ))
     client.insert("crawling_results", rows, column_names=[
-        "run_uuid", "domain", "dns_result", "doech_result", "timestamp"])
+        "run_uuid", "domain", "dns_result", "doech_result", "start", "end"])
 
 
 def get_dns_results(domain: str):
