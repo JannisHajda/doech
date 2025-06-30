@@ -25,7 +25,7 @@ CLICKHOUSE_PASSWORD = "default"
 
 GECKO_DRIVER_PATH = "/path/to/geckodriver"
 EXTENSION_PATH = "/path/to/doech/extension"
-DOMAIN_LIST = "/path/to/domain_list.csv"
+DOMAIN_LIST = "/Users/jannis/Git/doech/crawler/domains.csv"
 TOP_N_DOMAINS = 1000  # Number of domains to process
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
@@ -45,7 +45,8 @@ def init_clickhouse():
             domain String,
             dns_result String,
             doech_result String,
-            timestamp DateTime DEFAULT now()
+            start DateTime,
+            end DateTime
         ) ENGINE = MergeTree()
         ORDER BY domain;
     """)
@@ -60,7 +61,8 @@ def insert_batch(client, batch):
             entry.get("domain"),
             json.dumps(entry.get("dns", {})),
             json.dumps(entry.get("doech", {})),
-            datetime.utcnow()
+            entry.get("start"),
+            entry.get("end")
         ))
     client.insert("crawling_results", rows, column_names=[
         "run_uuid", "domain", "dns_result", "doech_result", "timestamp"])
@@ -151,12 +153,9 @@ def get_doech_results(url: str):
     if HEADLESS:
         options.add_argument("--headless")
         options.add_argument("--disable-gpu")
-        # Recommended for environments where root might be involved
         options.add_argument("--no-sandbox")
-        # Overcomes limited resource problems
         options.add_argument("--disable-dev-shm-usage")
 
-    # Corrected: use GECKO_DRIVER_PATH
     service = FirefoxService(executable_path=GECKO_DRIVER_PATH)
     driver = webdriver.Firefox(service=service, options=options)
 
@@ -206,7 +205,9 @@ def process_domain(domain: str):
 
     result = {
         "run_uuid": RUN_UUID,
-        "domain": domain
+        "domain": domain,
+        "start": datetime.now().isoformat(),
+        "end": None
     }
 
     try:
@@ -221,6 +222,8 @@ def process_domain(domain: str):
     except Exception as e:
         result["doech"] = {"error": str(e)}
 
+    result["end"] = datetime.now().isoformat()
+
     return result
 
 
@@ -230,7 +233,7 @@ if __name__ == "__main__":
 
     with open(DOMAIN_LIST, "r") as f:
         reader = csv.reader(f, delimiter=',')
-        domains = [row[0] for row in reader if row]
+        domains = [row[1] for row in reader if row]
 
         if TOP_N_DOMAINS > 0:
             domains = domains[:TOP_N_DOMAINS]
