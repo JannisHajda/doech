@@ -16,6 +16,7 @@ import multiprocessing
 from tqdm import tqdm
 from clickhouse_connect import get_client
 from datetime import datetime
+import uuid
 
 CLICKHOUSE_HOST = "localhost"
 CLICKHOUSE_PORT = 8123
@@ -31,12 +32,15 @@ CLICKHOUSE_BATCH_SIZE = 100
 HEADLESS = True
 MAIN_FRAME_ONLY = True
 
+RUN_UUID = None
+
 
 def init_clickhouse():
-    client = get_client(host="localhost", port=8123,
-                        username="default", password="default")
+    client = get_client(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT,
+                        username=CLICKHOUSE_USER, password=CLICKHOUSE_PASSWORD)
     client.command("""
         CREATE TABLE IF NOT EXISTS crawling_results (
+            run_uuid String, -- Added run_uuid column
             domain String,
             dns_result String,
             doech_result String,
@@ -51,13 +55,14 @@ def insert_batch(client, batch):
     rows = []
     for entry in batch:
         rows.append((
+            entry.get("run_uuid"),  # Add run_uuid to the row
             entry.get("domain"),
             json.dumps(entry.get("dns", {})),
             json.dumps(entry.get("doech", {})),
             datetime.utcnow()
         ))
     client.insert("crawling_results", rows, column_names=[
-                  "domain", "dns_result", "doech_result", "timestamp"])
+        "run_uuid", "domain", "dns_result", "doech_result", "timestamp"])
 
 
 def get_dns_results(domain: str):
@@ -145,9 +150,14 @@ def get_doech_results(url: str):
     if HEADLESS:
         options.add_argument("--headless")
         options.add_argument("--disable-gpu")
+        # Recommended for environments where root might be involved
+        options.add_argument("--no-sandbox")
+        # Overcomes limited resource problems
+        options.add_argument("--disable-dev-shm-usage")
 
-    service = FirefoxService(executable_path="/path/to/geckodriver")
-    driver = webdriver.Firefox(options=options)
+    # Corrected: use GECKO_DRIVER_PATH
+    service = FirefoxService(executable_path=GECKO_DRIVER_PATH)
+    driver = webdriver.Firefox(service=service, options=options)
 
     # Install doech extension
     driver.install_addon(EXTENSION_PATH, temporary=True)
@@ -194,6 +204,7 @@ def process_domain(domain: str):
     """
 
     result = {
+        "run_uuid": RUN_UUID,
         "domain": domain
     }
 
@@ -213,10 +224,13 @@ def process_domain(domain: str):
 
 
 if __name__ == "__main__":
+    RUN_UUID = str(uuid.uuid4())
+    print(f"Starting run with UUID: {RUN_UUID}")
+
     with open(DOMAIN_LIST, "r") as f:
         reader = csv.reader(f)
         next(reader)  # skip header row: "domain"
-        domains = [row[0] for row in reader if row]  # take the domain string
+        domains = [row[0] for row in reader if row]
 
     client = init_clickhouse()
     buffer = []
@@ -230,3 +244,5 @@ if __name__ == "__main__":
 
         if buffer:
             insert_batch(client, buffer)
+
+    print(f"Run {RUN_UUID} finished.")
