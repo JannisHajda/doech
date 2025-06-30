@@ -13,13 +13,46 @@ import csv
 import json
 import multiprocessing
 from tqdm import tqdm
+from clickhouse_connect import get_client
+from datetime import datetime
 
 
-TRANCO_LIST = "/Users/jannis/Git/doech/crawler/top-1m.csv"
+DOMAIN_LIST = "/Users/jannis/Git/doech/crawler/domains.csv"
 EXTENSION_PATH = "/Users/jannis/Git/doech/extension/src"
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
+CLICKHOUSE_BATCH_SIZE = 100
 OUTPUT_FILE = "results.json"
+HEADLESS = True
+MAIN_FRAME_ONLY = True
+
+
+def init_clickhouse():
+    client = get_client(host="localhost", port=8123,
+                        username="default", password="default")
+    client.command("""
+        CREATE TABLE IF NOT EXISTS crawling_results (
+            domain String,
+            dns_result String,
+            doech_result String,
+            timestamp DateTime DEFAULT now()
+        ) ENGINE = MergeTree()
+        ORDER BY domain;
+    """)
+    return client
+
+
+def insert_batch(client, batch):
+    rows = []
+    for entry in batch:
+        rows.append((
+            entry.get("domain"),
+            json.dumps(entry.get("dns", {})),
+            json.dumps(entry.get("doech", {})),
+            datetime.utcnow()
+        ))
+    client.insert("crawling_results", rows, column_names=[
+                  "domain", "dns_result", "doech_result", "timestamp"])
 
 
 def get_dns_results(domain: str):
@@ -94,16 +127,17 @@ def get_dns_results(domain: str):
 def get_doech_results(url: str):
     """
     Uses Selenium to load a page and extracts the results generated using doech.
+    If MAIN_FRAME_ONLY is True, filters out objects not related to the main frame.
     """
-
     options = Options()
-    options.headless = True
 
     # Enable DoH with Cloudflare
     options.set_preference("network.trr.mode", 2)
     options.set_preference(
         "network.trr.uri", "https://mozilla.cloudflare-dns.com/dns-query")
     options.set_preference("network.trr.bootstrapAddress", "1.1.1.1")
+    if HEADLESS:
+        options.add_argument("--headless")
 
     driver = webdriver.Firefox(options=options)
 
@@ -134,6 +168,13 @@ def get_doech_results(url: str):
             }, "*");
         """)
 
+        if MAIN_FRAME_ONLY and isinstance(doech_results, list):
+            # Filter: only keep entries where requestInfo.type == "main_frame"
+            doech_results = [
+                entry for entry in doech_results
+                if entry.get("requestInfo", {}).get("type") == "main_frame"
+            ]
+
         return doech_results
     finally:
         driver.quit()
@@ -143,31 +184,41 @@ def process_domain(domain: str):
     """
     Processes a single domain by fetching DNS results and doech results.
     """
+
+    result = {
+        "domain": domain
+    }
+
     try:
         dns_results = get_dns_results(domain)
-        doech_results = get_doech_results(domain)
-
-        return {
-            "domain": domain,
-            "dns": dns_results,
-            "doech": doech_results
-        }
-
+        result["dns"] = dns_results
     except Exception as e:
-        return {
-            "domain": domain,
-            "error": str(e)
-        }
+        result["dns"] = {"error": str(e)}
+
+    try:
+        doech_results = get_doech_results(f"https://{domain}")
+        result["doech"] = doech_results
+    except Exception as e:
+        result["doech"] = {"error": str(e)}
+
+    return result
 
 
 if __name__ == "__main__":
-    with open(TRANCO_LIST, "r") as f:
-        reader = csv.reader(f, delimiter=',')
-        domains = [row[1] for row in reader if len(row) > 1]
+    with open(DOMAIN_LIST, "r") as f:
+        reader = csv.reader(f)
+        next(reader)  # skip header row: "domain"
+        domains = [row[0] for row in reader if row]  # take the domain string
+
+    client = init_clickhouse()
+    buffer = []
 
     with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
-        results = list(tqdm(pool.imap(process_domain, domains),
-                       total=len(domains), desc="Processing Domains"))
+        for result in tqdm(pool.imap(process_domain, domains), total=len(domains), desc="Processing Domains"):
+            buffer.append(result)
+            if len(buffer) >= CLICKHOUSE_BATCH_SIZE:
+                insert_batch(client, buffer)
+                buffer = []
 
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(results, f, indent=2)
+        if buffer:
+            insert_batch(client, buffer)

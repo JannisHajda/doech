@@ -46,26 +46,28 @@ const addRequestCard = (data, isPrimary) => {
   const hiddenClass = isPrimary || showAll ? "" : "hidden";
 
   return `
-    <div class="${hiddenClass} request" id="${requestType}-${data.requestId}">
+    <div class="${hiddenClass} request" id="${requestType}-${
+    data.requestInfo.requestId
+  }">
       <div class="flex ${typeClass} w-full ${bgColor} items-center p-2 rounded-md mb-5">
         <div class="rounded-lg ${
           isPrimary ? "h-12 w-12" : "h-8 w-8"
         } bg-slate-300 flex items-center justify-center flex-shrink-0">
-          <span>${data.statusCode}</span>
+          <span>${data.requestInfo.statusCode}</span>
         </div>
         <div class="url ml-2 flex-grow overflow-hidden">
           <p class="text-ellipsis overflow-hidden whitespace-nowrap w-full text-white" title="${
-            data.url
+            data.requestInfo.url
           }">
-            ${data.url}
+            ${data.requestInfo.url}
           </p>
         </div>
         <div class="stats flex items-center ml-2 flex-shrink-0 text-white">
           <span class="material-icons mr-1" title="DoH Usage">${
-            data.usedPrivateDns ? "check_circle" : "error"
+            data.securityInfo.usedPrivateDns ? "check_circle" : "error"
           }</span>
           <span class="material-icons" title="ECH Usage">${
-            data.usedEch ? "check_circle" : "error"
+            data.securityInfo.usedEch ? "check_circle" : "error"
           }</span>
         </div>
       </div>
@@ -75,8 +77,8 @@ const addRequestCard = (data, isPrimary) => {
 const addPrimaryRequest = (data) => {
   primaryRequests.push(data);
   primaryRequestCount++;
-  if (data.usedEch) primaryRequestCountEch++;
-  if (data.usedPrivateDns) primaryRequestCountPrivateDns++;
+  if (data.securityInfo.usedEch) primaryRequestCountEch++;
+  if (data.securityInfo.usedPrivateDns) primaryRequestCountPrivateDns++;
 
   $("#requests").prepend(addRequestCard(data, true));
   updateChart();
@@ -86,8 +88,8 @@ const addPrimaryRequest = (data) => {
 const addSubRequest = (data) => {
   subRequests.push(data);
   subRequestCount++;
-  if (data.usedEch) subRequestCountEch++;
-  if (data.usedPrivateDns) subRequestCountPrivateDns++;
+  if (data.securityInfo.usedEch) subRequestCountEch++;
+  if (data.securityInfo.usedPrivateDns) subRequestCountPrivateDns++;
 
   $("#requests").prepend(addRequestCard(data, false));
   updateChart();
@@ -98,7 +100,7 @@ browser.runtime.onMessage.addListener(async (message) => {
   if (message.type !== "doech-update") return;
 
   const request = message.data;
-  request.type === "primaryRequest"
+  request.requestInfo.type === "main_frame"
     ? addPrimaryRequest(request)
     : addSubRequest(request);
 });
@@ -106,17 +108,12 @@ browser.runtime.onMessage.addListener(async (message) => {
 const exportData = async () => {
   let requests = [...primaryRequests, ...subRequests];
 
-  const exportedData = requests.map((req) => ({
-    ...req,
-    timeStamp: new Date(req.timeStamp).toISOString(),
-  }));
-
-  if (!exportedData.length) {
+  if (!requests.length) {
     alert("No data to export.");
     return;
   }
 
-  const blob = new Blob([JSON.stringify(exportedData, null, 2)], {
+  const blob = new Blob([JSON.stringify(requests, null, 2)], {
     type: "application/json",
   });
 
@@ -133,7 +130,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const res = await browser.runtime.sendMessage({ type: "doech-init" });
 
   res.data.forEach((data) =>
-    data.type === "primaryRequest"
+    data.requestInfo.type === "main_frame"
       ? addPrimaryRequest(data)
       : addSubRequest(data)
   );

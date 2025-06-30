@@ -7,8 +7,7 @@ browser.webRequest.onHeadersReceived.addListener(
 );
 
 const receivedRequest = async (details) => {
-  const { tabId, requestId, url, timeStamp, ip, statusCode, fromCache, type } =
-    details;
+  const { requestId } = details;
 
   const securityInfo = await browser.webRequest.getSecurityInfo(requestId, {});
 
@@ -17,21 +16,9 @@ const receivedRequest = async (details) => {
   if (usedEch === undefined || usedPrivateDns === undefined) return;
 
   const data = {
-    tabId,
-    type,
-    requestId,
-    timeStamp,
-    url,
-    ip,
-    statusCode,
-    usedEch,
-    usedPrivateDns,
-    fromCache,
+    requestInfo: details,
+    securityInfo: securityInfo,
   };
-
-  type == "main_frame"
-    ? (data.type = "primaryRequest")
-    : (data.type = "subRequest");
 
   requests.push(data);
 
