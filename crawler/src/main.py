@@ -1,6 +1,7 @@
 import dns.rdtypes.svcbbase
 from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.firefox.service import Service as FirefoxService
 import time
 import requests
 import dns.rdata
@@ -16,13 +17,17 @@ from tqdm import tqdm
 from clickhouse_connect import get_client
 from datetime import datetime
 
+CLICKHOUSE_HOST = "localhost"
+CLICKHOUSE_PORT = 8123
+CLICKHOUSE_USER = "default"
+CLICKHOUSE_PASSWORD = "default"
 
-DOMAIN_LIST = "/Users/jannis/Git/doech/crawler/domains.csv"
-EXTENSION_PATH = "/Users/jannis/Git/doech/extension/src"
+GECKO_DRIVER_PATH = "/path/to/geckodriver"
+EXTENSION_PATH = "/path/to/doech/extension"
+DOMAIN_LIST = "/path/to/domain_list.csv"
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
 CLICKHOUSE_BATCH_SIZE = 100
-OUTPUT_FILE = "results.json"
 HEADLESS = True
 MAIN_FRAME_ONLY = True
 
@@ -129,16 +134,19 @@ def get_doech_results(url: str):
     Uses Selenium to load a page and extracts the results generated using doech.
     If MAIN_FRAME_ONLY is True, filters out objects not related to the main frame.
     """
-    options = Options()
+    options = FirefoxOptions()
 
     # Enable DoH with Cloudflare
     options.set_preference("network.trr.mode", 2)
     options.set_preference(
         "network.trr.uri", "https://mozilla.cloudflare-dns.com/dns-query")
     options.set_preference("network.trr.bootstrapAddress", "1.1.1.1")
+
     if HEADLESS:
         options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
 
+    service = FirefoxService(executable_path="/path/to/geckodriver")
     driver = webdriver.Firefox(options=options)
 
     # Install doech extension
