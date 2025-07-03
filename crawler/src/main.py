@@ -23,10 +23,11 @@ CLICKHOUSE_PORT = 8123
 CLICKHOUSE_USER = "default"
 CLICKHOUSE_PASSWORD = "default"
 
-GECKO_DRIVER_PATH = "/path/to/geckodriver"
-EXTENSION_PATH = "/path/to/doech/extension"
-DOMAIN_LIST = "/Users/jannis/Git/doech/crawler/domains.csv"
-TOP_N_DOMAINS = 1000  # Number of domains to process
+GECKO_DRIVER_PATH = "/usr/local/bin/geckodriver"
+EXTENSION_PATH = "/root/git/doech/extension/src"
+DOMAIN_LIST = "/root/git/doech/crawler/domains.csv"
+START_AT = 0
+TOP_N_DOMAINS = 1
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
 CLICKHOUSE_BATCH_SIZE = 100
@@ -34,6 +35,7 @@ HEADLESS = True
 MAIN_FRAME_ONLY = True
 
 RUN_UUID = None
+WORKER_ID = "node-0"
 
 
 def init_clickhouse():
@@ -41,10 +43,12 @@ def init_clickhouse():
                         username=CLICKHOUSE_USER, password=CLICKHOUSE_PASSWORD)
     client.command("""
         CREATE TABLE IF NOT EXISTS crawling_results (
-            run_uuid String, -- Added run_uuid column
+            worker_id String,
+            run_uuid String, 
             domain String,
-            dns_result String,
-            doech_result String,
+            dns_svcb_results String,
+            dns_https_results String,
+            doech_results String,
             start DateTime,
             end DateTime
         ) ENGINE = MergeTree()
@@ -57,18 +61,20 @@ def insert_batch(client, batch):
     rows = []
     for entry in batch:
         rows.append((
-            entry.get("run_uuid"),  # Add run_uuid to the row
+            WORKER_ID,
+            entry.get("run_uuid"),
             entry.get("domain"),
-            json.dumps(entry.get("dns", {})),
+            json.dumps(entry.get("dns_svcb", {})),
+            json.dumps(entry.get("dns_https", {})),
             json.dumps(entry.get("doech", {})),
             entry.get("start"),
             entry.get("end")
         ))
     client.insert("crawling_results", rows, column_names=[
-        "run_uuid", "domain", "dns_result", "doech_result", "start", "end"])
+        "worker_id", "run_uuid", "domain", "dns_svcb_results", "dns_https_results", "doech_results", "start", "end"])
 
 
-def get_dns_results(domain: str):
+def get_dns_results(domain: str, dns_type: str = "HTTPS"):
     """
     Queries Cloudflare DoH for HTTPS RR and parses binary config if present.
 
@@ -81,7 +87,7 @@ def get_dns_results(domain: str):
     url = "https://cloudflare-dns.com/dns-query"
     params = {
         "name": domain,
-        "type": "HTTPS"
+        "type": dns_type,
     }
     headers = {
         "accept": "application/dns-json"
@@ -104,14 +110,24 @@ def get_dns_results(domain: str):
             hex_string = match.group(1).replace(" ", "")
             raw_bytes = unhexlify(hex_string)
 
-            rdata = dns.rdata.from_wire(
-                dns.rdataclass.IN,
-                dns.rdatatype.HTTPS,
-                raw_bytes,
-                0,
-                len(raw_bytes),
-                origin=dns.name.from_text(domain)
-            )
+            if dns_type == "SVCB":
+                rdata = dns.rdata.from_wire(
+                    dns.rdataclass.IN,
+                    dns.rdatatype.SVCB,
+                    raw_bytes,
+                    0,
+                    len(raw_bytes),
+                    origin=dns.name.from_text(domain)
+                )
+            elif dns_type == "HTTPS":
+                rdata = dns.rdata.from_wire(
+                    dns.rdataclass.IN,
+                    dns.rdatatype.HTTPS,
+                    raw_bytes,
+                    0,
+                    len(raw_bytes),
+                    origin=dns.name.from_text(domain)
+                )
 
             parsed_params = {}
             for param in rdata.params:
@@ -198,23 +214,30 @@ def get_doech_results(url: str):
         driver.quit()
 
 
-def process_domain(domain: str):
+def process_domain(args):
     """
     Processes a single domain by fetching DNS results and doech results.
     """
+    domain, run_uuid = args
 
     result = {
-        "run_uuid": RUN_UUID,
+        "run_uuid": run_uuid,
         "domain": domain,
-        "start": datetime.now().isoformat(),
+        "start": datetime.now(),
         "end": None
     }
 
     try:
-        dns_results = get_dns_results(domain)
-        result["dns"] = dns_results
+        dns_svcb_results = get_dns_results(domain, dns_type="SVCB")
+        result["dns_svcb"] = dns_svcb_results
     except Exception as e:
-        result["dns"] = {"error": str(e)}
+        result["dns_svcb"] = {"error": str(e)}
+
+    try:
+        dns_https_results = get_dns_results(domain, dns_type="HTTPS")
+        result["dns_https"] = dns_https_results
+    except Exception as e:
+        result["dns_https"] = {"error": str(e)}
 
     try:
         doech_results = get_doech_results(f"https://{domain}")
@@ -222,14 +245,15 @@ def process_domain(domain: str):
     except Exception as e:
         result["doech"] = {"error": str(e)}
 
-    result["end"] = datetime.now().isoformat()
+    result["end"] = datetime.now()
 
     return result
 
 
 if __name__ == "__main__":
+    print(f"Started worker {WORKER_ID}...")
     RUN_UUID = str(uuid.uuid4())
-    print(f"Starting run with UUID: {RUN_UUID}")
+    print(f"Starting run with UUID: {RUN_UUID}...")
 
     with open(DOMAIN_LIST, "r") as f:
         reader = csv.reader(f, delimiter=',')
@@ -241,8 +265,10 @@ if __name__ == "__main__":
     client = init_clickhouse()
     buffer = []
 
+    args = [(domain, RUN_UUID) for domain in domains]
+
     with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
-        for result in tqdm(pool.imap(process_domain, domains), total=len(domains), desc="Processing Domains"):
+        for result in tqdm(pool.imap(process_domain, args), total=len(domains), desc="Processing Domains"):
             buffer.append(result)
             if len(buffer) >= CLICKHOUSE_BATCH_SIZE:
                 insert_batch(client, buffer)
