@@ -1,8 +1,4 @@
 import dns.rdtypes.svcbbase
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.firefox.service import Service as FirefoxService
-import time
 import requests
 import dns.rdata
 import dns.rdataclass
@@ -23,24 +19,24 @@ CLICKHOUSE_PORT = 8123
 CLICKHOUSE_USER = "default"
 CLICKHOUSE_PASSWORD = "default"
 
-GECKO_DRIVER_PATH = "/usr/local/bin/geckodriver"
-EXTENSION_PATH = "/home/nis/git/doech/extension/src"
-DOMAIN_LIST = "/home/nis/git/doech/crawler/domains.csv"
+DOMAIN_LIST = "/root/git/doech/crawler/domains.csv"
 START_AT = 0
-NUM_DOMAINS = 2
+NUM_DOMAINS = 250000
 SLEEP_TIME = 5
-NUM_PROCESSES = 4
-CLICKHOUSE_BATCH_SIZE = 25
-HEADLESS = True
-MAIN_FRAME_ONLY = True
+NUM_PROCESSES = 16
+CLICKHOUSE_BATCH_SIZE = 100
 
 RUN_UUID = None
 WORKER_ID = "node-0"
 
 
 def init_clickhouse():
-    client = get_client(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT,
-                        username=CLICKHOUSE_USER, password=CLICKHOUSE_PASSWORD)
+    client = get_client(
+        host=CLICKHOUSE_HOST,
+        port=CLICKHOUSE_PORT,
+        username=CLICKHOUSE_USER,
+        password=CLICKHOUSE_PASSWORD
+    )
     client.command("""
         CREATE TABLE IF NOT EXISTS dns_results (
             worker_id String,
@@ -48,6 +44,8 @@ def init_clickhouse():
             domain String,
             start DateTime,
             end DateTime,
+            dns_a_results String,
+            dns_aaaa_results String,
             dns_svcb_results String,
             dns_https_results String
         ) ENGINE = MergeTree()
@@ -63,169 +61,84 @@ def insert_batch(client, batch):
             WORKER_ID,
             entry.get("run_uuid"),
             entry.get("domain"),
-            json.dumps(entry.get("dns_svcb", {})),
-            json.dumps(entry.get("dns_https", {})),
             entry.get("start"),
-            entry.get("end")
+            entry.get("end"),
+            json.dumps(entry.get("dns_a", [])),
+            json.dumps(entry.get("dns_aaaa", [])),
+            json.dumps(entry.get("dns_svcb", [])),
+            json.dumps(entry.get("dns_https", []))
         ))
     client.insert("dns_results", rows, column_names=[
-        "worker_id", "run_uuid", "domain", "dns_svcb_results", "dns_https_results", "start", "end"])
+        "worker_id", "run_uuid", "domain", "start", "end",
+        "dns_a_results", "dns_aaaa_results", "dns_svcb_results", "dns_https_results"
+    ])
 
 
 def get_dns_results(domain: str, dns_type: str = "HTTPS"):
-    """
-    Queries Cloudflare DoH for HTTPS RR and parses binary config if present.
-
-    Returns:
-        {
-            "domain": str,
-            "data": dict (SVCB/HTTPS params as key-value pairs),
-        }
-    """
     url = "https://cloudflare-dns.com/dns-query"
-    params = {
-        "name": domain,
-        "type": dns_type,
-    }
-    headers = {
-        "accept": "application/dns-json"
-    }
+    params = {"name": domain, "type": dns_type}
+    headers = {"accept": "application/dns-json"}
 
     try:
         resp = requests.get(url, params=params, headers=headers, timeout=5)
         resp.raise_for_status()
         data = resp.json()
 
+        results = []
+
         for answer in data.get("Answer", []):
-            presentation = answer.get("data", "")
-            if not presentation.startswith("\\#"):
-                continue
+            if dns_type in ("A", "AAAA"):
+                ip = answer.get("data", "")
+                if ip:
+                    results.append({"ip": ip})
 
-            match = re.match(r'^\\# \d+\s+(.+)$', presentation)
-            if not match:
-                continue
+            elif dns_type in ("SVCB", "HTTPS"):
+                presentation = answer.get("data", "")
+                if not presentation.startswith("\\#"):
+                    continue
 
-            hex_string = match.group(1).replace(" ", "")
-            raw_bytes = unhexlify(hex_string)
+                match = re.match(r'^\\# \d+\s+(.+)$', presentation)
+                if not match:
+                    continue
 
-            if dns_type == "SVCB":
+                hex_string = match.group(1).replace(" ", "")
+                raw_bytes = unhexlify(hex_string)
+
+                rdatatype = dns.rdatatype.SVCB if dns_type == "SVCB" else dns.rdatatype.HTTPS
                 rdata = dns.rdata.from_wire(
                     dns.rdataclass.IN,
-                    dns.rdatatype.SVCB,
+                    rdatatype,
                     raw_bytes,
                     0,
                     len(raw_bytes),
                     origin=dns.name.from_text(domain)
                 )
-            elif dns_type == "HTTPS":
-                rdata = dns.rdata.from_wire(
-                    dns.rdataclass.IN,
-                    dns.rdatatype.HTTPS,
-                    raw_bytes,
-                    0,
-                    len(raw_bytes),
-                    origin=dns.name.from_text(domain)
-                )
 
-            parsed_params = {}
-            if rdata.priority == 0:
-                parsed_params["alias_target"] = rdata.target.to_text().rstrip(
-                    ".")
-                parsed_params["priority"] = 0
-            else:
-                for param in rdata.params:
-                    key = dns.rdtypes.svcbbase.ParamKey(param).name
-                    value = rdata.params.get(param).to_text()
-                    parsed_params[key] = value.strip('"')
+                parsed_params = {}
+                if rdata.priority == 0:
+                    parsed_params["alias_target"] = rdata.target.to_text().rstrip(
+                        ".")
+                    parsed_params["priority"] = 0
+                else:
+                    for param in rdata.params:
+                        key = dns.rdtypes.svcbbase.ParamKey(param).name
+                        value = rdata.params.get(param).to_text()
+                        parsed_params[key] = value.strip('"')
 
-                parsed_params["priority"] = rdata.priority
-                parsed_params["target"] = rdata.target.to_text().rstrip(".")
+                    parsed_params["priority"] = rdata.priority
+                    parsed_params["target"] = rdata.target.to_text().rstrip(
+                        ".")
 
-            return {
-                "domain": domain,
-                "data": parsed_params,
-            }
+                results.append(parsed_params)
 
-        return {
-            "domain": domain,
-            "data": {},
-        }
+        return results
 
     except Exception as e:
-        return {
-            "domain": domain,
-            "data": {},
-            "error": str(e)
-        }
-
-
-def get_doech_results(url: str):
-    """
-    Uses Selenium to load a page and extracts the results generated using doech.
-    If MAIN_FRAME_ONLY is True, filters out objects not related to the main frame.
-    """
-    options = FirefoxOptions()
-
-    # Enable DoH with Cloudflare
-    options.set_preference("network.trr.mode", 2)
-    options.set_preference(
-        "network.trr.uri", "https://mozilla.cloudflare-dns.com/dns-query")
-    options.set_preference("network.trr.bootstrapAddress", "1.1.1.1")
-
-    if HEADLESS:
-        options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-    service = FirefoxService(executable_path=GECKO_DRIVER_PATH)
-    driver = webdriver.Firefox(service=service, options=options)
-
-    # Install doech extension
-    driver.install_addon(EXTENSION_PATH, temporary=True)
-
-    try:
-        driver.get(url)
-
-        time.sleep(SLEEP_TIME)
-
-        doech_results = driver.execute_async_script("""
-            const callback = arguments[arguments.length - 1];
-
-            const handleExport = (event) => {
-                if (event?.data?.from === "doech" && event?.data?.to === "selenium" && event?.data?.action === "export") {
-                    window.removeEventListener("message", handleExport);
-                    callback(event.data.data);
-                }
-            }
-
-            window.addEventListener("message", handleExport);
-
-            window.postMessage({
-                from: "selenium",
-                to: "doech",
-                action: "export",
-            }, "*");
-        """)
-
-        if MAIN_FRAME_ONLY and isinstance(doech_results, list):
-            # Filter: only keep entries where requestInfo.type == "main_frame"
-            doech_results = [
-                entry for entry in doech_results
-                if entry.get("requestInfo", {}).get("type") == "main_frame"
-            ]
-
-        return doech_results
-    finally:
-        driver.quit()
+        return e
 
 
 def process_domain(args):
-    """
-    Processes a single domain by fetching DNS results and doech results.
-    """
     worker_id, run_uuid, domain = args
-
     result = {
         "worker_id": worker_id,
         "run_uuid": run_uuid,
@@ -235,19 +148,26 @@ def process_domain(args):
     }
 
     try:
-        dns_svcb_results = get_dns_results(domain, dns_type="SVCB")
-        result["dns_svcb"] = dns_svcb_results
+        result["dns_a"] = get_dns_results(domain, dns_type="A")
     except Exception as e:
-        result["dns_svcb"] = {"error": str(e)}
+        result["dns_a"] = [{"error": str(e)}]
 
     try:
-        dns_https_results = get_dns_results(domain, dns_type="HTTPS")
-        result["dns_https"] = dns_https_results
+        result["dns_aaaa"] = get_dns_results(domain, dns_type="AAAA")
     except Exception as e:
-        result["dns_https"] = {"error": str(e)}
+        result["dns_aaaa"] = [{"error": str(e)}]
+
+    try:
+        result["dns_svcb"] = get_dns_results(domain, dns_type="SVCB")
+    except Exception as e:
+        result["dns_svcb"] = [{"error": str(e)}]
+
+    try:
+        result["dns_https"] = get_dns_results(domain, dns_type="HTTPS")
+    except Exception as e:
+        result["dns_https"] = [{"error": str(e)}]
 
     result["end"] = datetime.now()
-
     return result
 
 
@@ -269,7 +189,6 @@ if __name__ == "__main__":
     buffer = []
 
     args = [(WORKER_ID, RUN_UUID, domain) for domain in domains]
-
     NUM_PROCESSES = min(NUM_PROCESSES, len(domains))
 
     with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
