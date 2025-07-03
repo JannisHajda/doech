@@ -134,7 +134,7 @@ def get_dns_results(domain: str, dns_type: str = "HTTPS"):
         return results
 
     except Exception as e:
-        return e
+        return [{"error": str(e)}]
 
 
 def process_domain(args):
