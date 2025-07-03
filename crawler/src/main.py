@@ -27,7 +27,7 @@ GECKO_DRIVER_PATH = "/usr/local/bin/geckodriver"
 EXTENSION_PATH = "/root/git/doech/extension/src"
 DOMAIN_LIST = "/root/git/doech/crawler/domains.csv"
 START_AT = 0
-NUM_DOMAINS = 10000
+NUM_DOMAINS = 1
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
 CLICKHOUSE_BATCH_SIZE = 25
@@ -130,10 +130,19 @@ def get_dns_results(domain: str, dns_type: str = "HTTPS"):
                 )
 
             parsed_params = {}
-            for param in rdata.params:
-                key = dns.rdtypes.svcbbase.ParamKey(param).name
-                value = rdata.params.get(param).to_text()
-                parsed_params[key] = value.strip('"')
+            if rdata.priority == 0:
+                parsed_params["alias_target"] = rdata.target.to_text().rstrip(
+                    ".")
+                parsed_params["priority"] = 0
+            else:
+                for param in rdata.params:
+                    key = dns.rdtypes.svcbbase.ParamKey(param).name
+                    value = rdata.params.get(param).to_text()
+                    parsed_params[key] = value.strip('"')
+
+                parsed_params["priority"] = rdata.priority
+                parsed_params["target"] = rdata.target.to_text().rstrip(".")
+                parsed_params["params"] = parsed_params
 
             return {
                 "domain": domain,
