@@ -27,10 +27,10 @@ GECKO_DRIVER_PATH = "/usr/local/bin/geckodriver"
 EXTENSION_PATH = "/root/git/doech/extension/src"
 DOMAIN_LIST = "/root/git/doech/crawler/domains.csv"
 START_AT = 0
-TOP_N_DOMAINS = 1
+NUM_DOMAINS = 10000
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
-CLICKHOUSE_BATCH_SIZE = 100
+CLICKHOUSE_BATCH_SIZE = 25
 HEADLESS = True
 MAIN_FRAME_ONLY = True
 
@@ -259,8 +259,10 @@ if __name__ == "__main__":
         reader = csv.reader(f, delimiter=',')
         domains = [row[1] for row in reader if row]
 
-        if TOP_N_DOMAINS > 0:
-            domains = domains[:TOP_N_DOMAINS]
+        if START_AT > 0:
+            domains = domains[START_AT:]
+        if NUM_DOMAINS > 0:
+            domains = domains[:NUM_DOMAINS]
 
     client = init_clickhouse()
     buffer = []
