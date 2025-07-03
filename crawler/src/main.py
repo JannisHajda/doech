@@ -24,10 +24,10 @@ CLICKHOUSE_USER = "default"
 CLICKHOUSE_PASSWORD = "default"
 
 GECKO_DRIVER_PATH = "/usr/local/bin/geckodriver"
-EXTENSION_PATH = "/root/git/doech/extension/src"
-DOMAIN_LIST = "/root/git/doech/crawler/domains.csv"
+EXTENSION_PATH = "/home/nis/git/doech/extension/src"
+DOMAIN_LIST = "/home/nis/git/doech/crawler/domains.csv"
 START_AT = 0
-NUM_DOMAINS = 1
+NUM_DOMAINS = 2
 SLEEP_TIME = 5
 NUM_PROCESSES = 4
 CLICKHOUSE_BATCH_SIZE = 25
@@ -42,17 +42,16 @@ def init_clickhouse():
     client = get_client(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT,
                         username=CLICKHOUSE_USER, password=CLICKHOUSE_PASSWORD)
     client.command("""
-        CREATE TABLE IF NOT EXISTS crawling_results (
+        CREATE TABLE IF NOT EXISTS dns_results (
             worker_id String,
             run_uuid String, 
             domain String,
-            dns_svcb_results String,
-            dns_https_results String,
-            doech_results String,
             start DateTime,
-            end DateTime
+            end DateTime,
+            dns_svcb_results String,
+            dns_https_results String
         ) ENGINE = MergeTree()
-        ORDER BY domain;
+        ORDER BY end;
     """)
     return client
 
@@ -66,12 +65,11 @@ def insert_batch(client, batch):
             entry.get("domain"),
             json.dumps(entry.get("dns_svcb", {})),
             json.dumps(entry.get("dns_https", {})),
-            json.dumps(entry.get("doech", {})),
             entry.get("start"),
             entry.get("end")
         ))
-    client.insert("crawling_results", rows, column_names=[
-        "worker_id", "run_uuid", "domain", "dns_svcb_results", "dns_https_results", "doech_results", "start", "end"])
+    client.insert("dns_results", rows, column_names=[
+        "worker_id", "run_uuid", "domain", "dns_svcb_results", "dns_https_results", "start", "end"])
 
 
 def get_dns_results(domain: str, dns_type: str = "HTTPS"):
@@ -142,7 +140,6 @@ def get_dns_results(domain: str, dns_type: str = "HTTPS"):
 
                 parsed_params["priority"] = rdata.priority
                 parsed_params["target"] = rdata.target.to_text().rstrip(".")
-                parsed_params["params"] = parsed_params
 
             return {
                 "domain": domain,
@@ -227,9 +224,10 @@ def process_domain(args):
     """
     Processes a single domain by fetching DNS results and doech results.
     """
-    domain, run_uuid = args
+    worker_id, run_uuid, domain = args
 
     result = {
+        "worker_id": worker_id,
         "run_uuid": run_uuid,
         "domain": domain,
         "start": datetime.now(),
@@ -247,12 +245,6 @@ def process_domain(args):
         result["dns_https"] = dns_https_results
     except Exception as e:
         result["dns_https"] = {"error": str(e)}
-
-    try:
-        doech_results = get_doech_results(f"https://{domain}")
-        result["doech"] = doech_results
-    except Exception as e:
-        result["doech"] = {"error": str(e)}
 
     result["end"] = datetime.now()
 
@@ -276,7 +268,9 @@ if __name__ == "__main__":
     client = init_clickhouse()
     buffer = []
 
-    args = [(domain, RUN_UUID) for domain in domains]
+    args = [(WORKER_ID, RUN_UUID, domain) for domain in domains]
+
+    NUM_PROCESSES = min(NUM_PROCESSES, len(domains))
 
     with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
         for result in tqdm(pool.imap(process_domain, args), total=len(domains), desc="Processing Domains"):
