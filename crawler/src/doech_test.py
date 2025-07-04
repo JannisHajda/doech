@@ -11,8 +11,27 @@ import multiprocessing
 from tqdm import tqdm
 from dotenv import load_dotenv
 import os
+import logging
 
-load_dotenv()
+load_dotenv(override=True)
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FILE = os.getenv("LOG_FILE", "doech_test.log")
+
+numeric_level = getattr(logging, LOG_LEVEL, None)
+if not isinstance(numeric_level, int):
+    raise ValueError(f"Invalid log level: {LOG_LEVEL}")
+
+logging.basicConfig(
+    level=numeric_level,
+    format='%(asctime)s - %(process)d - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 WORKER_ID = os.getenv("WORKER_ID", "node-0")
 
@@ -42,17 +61,23 @@ def init_clickhouse():
         username=CLICKHOUSE_USER,
         password=CLICKHOUSE_PASSWORD
     )
-    client.command("""
-        CREATE TABLE IF NOT EXISTS doech_results (
-            worker_id String,
-            run_uuid String, 
-            domain String,
-            start DateTime,
-            end DateTime,
-            results String
-        ) ENGINE = MergeTree()
-        ORDER BY end;
-    """)
+    try:
+        client.command("""
+            CREATE TABLE IF NOT EXISTS doech_results (
+                worker_id String,
+                run_uuid String, 
+                domain String,
+                start DateTime,
+                end DateTime,
+                results String
+            ) ENGINE = MergeTree()
+            ORDER BY end;
+        """)
+        logger.info(
+            "ClickHouse table 'doech_results' checked/created successfully.")
+    except Exception as e:
+        logger.exception(f"Error initializing ClickHouse: {e}")
+        raise
     return client
 
 
@@ -67,10 +92,14 @@ def insert_batch(client, batch):
             entry.get("end"),
             json.dumps(entry.get("results", []))
         ))
-    client.insert("doech_results", rows, column_names=[
-        "worker_id", "run_uuid", "domain", "start", "end",
-        "results",
-    ])
+    try:
+        client.insert("doech_results", rows, column_names=[
+            "worker_id", "run_uuid", "domain", "start", "end",
+            "results",
+        ])
+        logger.debug(f"Inserted batch of {len(rows)} rows into ClickHouse.")
+    except Exception as e:
+        logger.exception(f"Error inserting batch into ClickHouse: {e}")
 
 
 def get_doech_results(domain: str):
@@ -94,14 +123,18 @@ def get_doech_results(domain: str):
         options.add_argument("--no-sandbox")
         # options.add_argument("--disable-dev-shm-usage")
 
-    service = FirefoxService(executable_path=GECKO_DRIVER_PATH)
-    driver = webdriver.Firefox(service=service, options=options)
-
-    # Install doech extension
-    driver.install_addon(EXTENSION_PATH, temporary=True)
+    driver = None
 
     try:
+        service = FirefoxService(executable_path=GECKO_DRIVER_PATH)
+        driver = webdriver.Firefox(service=service, options=options)
+        logger.debug(f"Successfully launched Firefox for {domain}")
+
+        driver.install_addon(EXTENSION_PATH, temporary=True)
+        logger.debug(f"Installed extension for {domain}")
+
         driver.get(url)
+        logger.debug(f"Navigated to {url}")
 
         time.sleep(SLEEP_TIME)
 
@@ -123,20 +156,28 @@ def get_doech_results(domain: str):
                 action: "export",
             }, "*");
         """)
+        logger.debug(f"Received doech results for {domain}")
 
         if MAIN_FRAME_ONLY and isinstance(doech_results, list):
-            # Filter: only keep entries where requestInfo.type == "main_frame"
-            doech_results = [
+            filtered_results = [
                 entry for entry in doech_results
                 if entry.get("requestInfo", {}).get("type") == "main_frame"
             ]
+            logger.debug(
+                f"Filtered doech results for {domain}. Original: {len(doech_results)}, Filtered: {len(filtered_results)}")
+            doech_results = filtered_results
 
         return doech_results
     except Exception as e:
-        print(f"Error processing {url}: {e}")
-        return [{"error": str(e)}]
+        logger.exception(f"Error processing {url}: {e}")
+        return [{"error": str(e), "domain": domain, "timestamp": datetime.now().isoformat()}]
     finally:
-        driver.quit()
+        if driver:
+            try:
+                driver.quit()
+                logger.debug(f"Driver quit successfully for {domain}")
+            except Exception as e:
+                logger.error(f"Error quitting driver for {domain}: {e}")
 
 
 def process_domain(args):
@@ -149,43 +190,86 @@ def process_domain(args):
         "end": None
     }
 
-    try:
-        result["results"] = get_doech_results(domain)
-    except Exception as e:
-        result["results"] = [{"error": str(e)}]
+    result["results"] = get_doech_results(domain)
 
     result["end"] = datetime.now()
     return result
 
 
 if __name__ == "__main__":
-    print(f"Started worker {WORKER_ID}...")
+    logger.info(f"Started worker {WORKER_ID}...")
+    logger.info("Using following configuration:")
+    logger.info(f" HEADLESS: {HEADLESS}")
+    logger.info(f" SLEEP_TIME: {SLEEP_TIME}")
+    logger.info(f" MAIN_FRAME_ONLY: {MAIN_FRAME_ONLY}")
+    logger.info(f" START_AT: {START_AT}")
+    logger.info(f" NUM_DOMAINS: {NUM_DOMAINS}")
+    logger.info(f" NUM_PROCESSES: {NUM_PROCESSES}")
+    logger.info(f" DOMAIN_LIST: {DOMAIN_LIST}")
+    logger.info(f" GECKO_DRIVER_PATH: {GECKO_DRIVER_PATH}")
+    logger.info(f" EXTENSION_PATH: {EXTENSION_PATH}")
+    logger.info(f" CLICKHOUSE_HOST: {CLICKHOUSE_HOST}")
+    logger.info(f" CLICKHOUSE_PORT: {CLICKHOUSE_PORT}")
+    logger.info(f" CLICKHOUSE_USER: {CLICKHOUSE_USER}")
+    logger.info(f" CLICKHOUSE_BATCH_SIZE: {CLICKHOUSE_BATCH_SIZE}")
+
     RUN_UUID = str(uuid.uuid4())
-    print(f"Starting run with UUID: {RUN_UUID}...")
+    logger.info(f"Starting run with UUID: {RUN_UUID}...")
 
-    with open(DOMAIN_LIST, "r") as f:
-        reader = csv.reader(f)
-        domains = [row[0] for row in reader if row]
+    try:
+        if not DOMAIN_LIST or not os.path.exists(DOMAIN_LIST):
+            logger.critical(
+                f"DOMAIN_LIST not found or not specified: {DOMAIN_LIST}. Exiting.")
+            exit(1)
 
-        if START_AT > 0:
-            domains = domains[START_AT:]
-        if NUM_DOMAINS > 0:
-            domains = domains[:NUM_DOMAINS]
+        with open(DOMAIN_LIST, "r") as f:
+            reader = csv.reader(f)
+            domains = [row[0] for row in reader if row]
 
-    client = init_clickhouse()
-    buffer = []
+            initial_domains_count = len(domains)
+            logger.info(
+                f"Loaded {initial_domains_count} domains from {DOMAIN_LIST}.")
 
-    args = [(WORKER_ID, RUN_UUID, domain) for domain in domains]
-    NUM_PROCESSES = min(NUM_PROCESSES, len(domains))
+            if START_AT > 0:
+                domains = domains[START_AT:]
+                logger.info(
+                    f"Adjusted domain list to start at index {START_AT}.")
+            if NUM_DOMAINS > 0:
+                domains = domains[:NUM_DOMAINS]
+                logger.info(f"Limited domain list to {NUM_DOMAINS} domains.")
 
-    with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
-        for result in tqdm(pool.imap(process_domain, args), total=len(domains), desc="Processing Domains"):
-            buffer.append(result)
-            if len(buffer) >= CLICKHOUSE_BATCH_SIZE:
+            logger.info(
+                f"Total domains to process after filtering: {len(domains)}")
+            if not domains:
+                logger.warning(
+                    "No domains left to process after applying START_AT and NUM_DOMAINS filters. Exiting.")
+                exit(0)
+
+        client = init_clickhouse()
+        buffer = []
+
+        args = [(WORKER_ID, RUN_UUID, domain) for domain in domains]
+        NUM_PROCESSES = min(NUM_PROCESSES, len(domains))
+        logger.info(f"Using {NUM_PROCESSES} worker processes.")
+
+        with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
+            for result in tqdm(pool.imap(process_domain, args), total=len(domains), desc="Processing Domains"):
+                buffer.append(result)
+                if len(buffer) >= CLICKHOUSE_BATCH_SIZE:
+                    insert_batch(client, buffer)
+                    buffer = []
+
+            if buffer:
                 insert_batch(client, buffer)
-                buffer = []
 
-        if buffer:
-            insert_batch(client, buffer)
+        logger.info(
+            f"Run {RUN_UUID} finished. All domains processed and results saved.")
 
-    print(f"Run {RUN_UUID} finished.")
+    except FileNotFoundError:
+        logger.critical(
+            f"Error: The DOMAIN_LIST file '{DOMAIN_LIST}' was not found. Please check your .env configuration.")
+        exit(1)
+    except Exception as main_e:
+        logger.exception(
+            f"An unhandled error occurred in the main execution block: {main_e}")
+        exit(1)
