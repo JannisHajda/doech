@@ -164,8 +164,8 @@ if __name__ == "__main__":
     print(f"Starting run with UUID: {RUN_UUID}...")
 
     with open(DOMAIN_LIST, "r") as f:
-        reader = csv.reader(f, delimiter=',')
-        domains = [row[1] for row in reader if row]
+        reader = csv.reader(f)
+        domains = [row[0] for row in reader if row]
 
         if START_AT > 0:
             domains = domains[START_AT:]
